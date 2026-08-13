@@ -255,21 +255,25 @@ def escape_drawtext(text):
     return text.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
 
 
-def build_compare_video(left_path, right_path, left_label, right_label, out_path, height=640, duration=None):
-    """左右分屏拼接两段视频，各自左上角烧字幕标注引擎名。"""
+def build_stacked_video(left_path, right_path, left_label, right_label, out_path, stack="hstack", size=640, duration=None):
+    """左右分屏（hstack）或上下堆叠（vstack）拼接两段视频，各自左上角烧字幕标注引擎名。静音输出。"""
     require_ffmpeg()
     out_dir = os.path.dirname(out_path)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
 
+    # hstack：两段统一缩放到同一高度（size=height），左右并排；
+    # vstack：两段统一缩放到同一宽度（size=width），上下堆叠。
+    scale_filter = f"scale=-2:{size}" if stack == "hstack" else f"scale={size}:-2"
+
     filter_complex = (
-        f"[0:v]scale=-2:{height},setpts=PTS-STARTPTS[left];"
-        f"[1:v]scale=-2:{height},setpts=PTS-STARTPTS[right];"
+        f"[0:v]{scale_filter},setpts=PTS-STARTPTS[left];"
+        f"[1:v]{scale_filter},setpts=PTS-STARTPTS[right];"
         f"[left]drawtext=text='{escape_drawtext(left_label)}':fontcolor=white:fontsize=28:"
         f"box=1:boxcolor=black@0.55:boxborderw=10:x=20:y=20[leftlbl];"
         f"[right]drawtext=text='{escape_drawtext(right_label)}':fontcolor=white:fontsize=28:"
         f"box=1:boxcolor=black@0.55:boxborderw=10:x=20:y=20[rightlbl];"
-        f"[leftlbl][rightlbl]hstack=inputs=2[merged]"
+        f"[leftlbl][rightlbl]{stack}=inputs=2[merged]"
     )
     cmd = ["ffmpeg", "-y", "-i", left_path, "-i", right_path, "-filter_complex", filter_complex, "-map", "[merged]"]
     if duration:
@@ -281,6 +285,31 @@ def build_compare_video(left_path, right_path, left_label, right_label, out_path
         print(f"❌ ffmpeg 合成失败:\n{result.stderr[-2000:]}")
         sys.exit(1)
     return out_path
+
+
+def probe_dimensions(path):
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
+         "-of", "csv=p=0:s=x", path],
+        capture_output=True, text=True,
+    )
+    text = (result.stdout or "").strip()
+    try:
+        w, h = text.split("x")
+        return int(w), int(h)
+    except (ValueError, AttributeError):
+        return None, None
+
+
+def resolve_layout(layout, probe_path):
+    """auto：宽视频（含正方形）上下堆叠，竖视频左右分屏；其余布局原样透传。"""
+    if layout != "auto":
+        return layout
+    width, height = probe_dimensions(probe_path)
+    if not width or not height:
+        print("⚠️  无法探测视频宽高，auto 布局回退为 side-by-side")
+        return "side-by-side"
+    return "top-bottom" if width >= height else "side-by-side"
 
 
 def probe_duration(path):
@@ -378,10 +407,20 @@ def build_gif(video_path, out_path, start=0, duration=None, fps=10, width=760):
     return out_path
 
 
+LAYOUT_DESC = {
+    "side-by-side": "左右分屏（静音）",
+    "top-bottom": "上下堆叠（静音）",
+    "sequential": "先后播放（保留音轨）",
+}
+
+
 def render_compare(layout, left_path, right_path, left_label, right_label, out_path, height, width):
+    """layout 必须已是具体值（side-by-side / top-bottom / sequential），auto 由调用方先 resolve_layout。"""
     if layout == "sequential":
         return build_sequential_video(left_path, right_path, left_label, right_label, out_path, width=width, height=height)
-    return build_compare_video(left_path, right_path, left_label, right_label, out_path, height=height)
+    if layout == "top-bottom":
+        return build_stacked_video(left_path, right_path, left_label, right_label, out_path, stack="vstack", size=width)
+    return build_stacked_video(left_path, right_path, left_label, right_label, out_path, stack="hstack", size=height)
 
 
 def cmd_generate(args):
@@ -450,10 +489,10 @@ def cmd_compare(args):
         raw_paths[side] = raw_path
         print(f"   ✅ {side}（{info['engine']}）已下载: {raw_path}")
 
-    layout_desc = "左右分屏" if args.layout == "side-by-side" else "先后播放（保留音轨）"
-    print(f"🎬 合成对比视频（{layout_desc}）...")
+    layout = resolve_layout(args.layout, raw_paths["left"])
+    print(f"🎬 合成对比视频（{LAYOUT_DESC[layout]}）...")
     render_compare(
-        args.layout, raw_paths["left"], raw_paths["right"],
+        layout, raw_paths["left"], raw_paths["right"],
         sides["left"]["label"], sides["right"]["label"],
         args.out, height=args.height, width=args.width,
     )
@@ -480,9 +519,9 @@ def cmd_merge(args):
     left_label = args.left_label or Path(args.left).stem
     right_label = args.right_label or Path(args.right).stem
 
-    layout_desc = "左右分屏" if args.layout == "side-by-side" else "先后播放（保留音轨）"
-    print(f"🎬 合成对比视频（{layout_desc}）...")
-    render_compare(args.layout, args.left, args.right, left_label, right_label,
+    layout = resolve_layout(args.layout, args.left)
+    print(f"🎬 合成对比视频（{LAYOUT_DESC[layout]}）...")
+    render_compare(layout, args.left, args.right, left_label, right_label,
                     args.out, height=args.height, width=args.width)
     print(f"✅ 对比视频已生成: {args.out}")
 
@@ -548,8 +587,10 @@ def build_parser():
     cmp_p.add_argument("--left-api-key", default=None, help="覆盖左侧引擎的默认凭据文件")
     cmp_p.add_argument("--right-api-key", default=None, help="覆盖右侧引擎的默认凭据文件")
     cmp_p.add_argument("--out", required=True, help="对比视频输出路径，如 output/compare.mp4")
-    cmp_p.add_argument("--layout", choices=["side-by-side", "sequential"], default="side-by-side",
-                        help="side-by-side（默认）：左右分屏同时播放，静音；sequential：先完整播放第一段再播放第二段，保留原始音轨")
+    cmp_p.add_argument("--layout", choices=["auto", "side-by-side", "top-bottom", "sequential"], default="auto",
+                        help="auto（默认）：按视频宽高自动选——宽视频（含正方形）上下堆叠，竖视频左右分屏；"
+                             "side-by-side：强制左右分屏；top-bottom：强制上下堆叠；两者都静音。"
+                             "sequential：先完整播放第一段再播放第二段，保留原始音轨")
     cmp_p.add_argument("--height", type=int, default=720, help="画面高度（像素）。side-by-side 是单侧高度，sequential 是整体高度，默认 720（配合默认 --width 1280 正好 16:9，避免黑边）")
     cmp_p.add_argument("--width", type=int, default=1280, help="仅 sequential 布局使用：统一画面宽度（像素），默认 1280")
     cmp_p.add_argument("--no-keep-source", action="store_true", help="合成完成后删除两段原始素材，默认保留")
@@ -567,8 +608,10 @@ def build_parser():
     merge_p.add_argument("--left-label", default=None, help="左侧/第一段字幕文字，默认用文件名")
     merge_p.add_argument("--right-label", default=None, help="右侧/第二段字幕文字，默认用文件名")
     merge_p.add_argument("--out", required=True, help="对比视频输出路径")
-    merge_p.add_argument("--layout", choices=["side-by-side", "sequential"], default="side-by-side",
-                          help="side-by-side（默认）：左右分屏同时播放，静音；sequential：先完整播放第一段再播放第二段，保留原始音轨")
+    merge_p.add_argument("--layout", choices=["auto", "side-by-side", "top-bottom", "sequential"], default="auto",
+                          help="auto（默认）：按视频宽高自动选——宽视频（含正方形）上下堆叠，竖视频左右分屏；"
+                               "side-by-side：强制左右分屏；top-bottom：强制上下堆叠；两者都静音。"
+                               "sequential：先完整播放第一段再播放第二段，保留原始音轨")
     merge_p.add_argument("--height", type=int, default=720, help="画面高度（像素）。side-by-side 是单侧高度，sequential 是整体高度，默认 720（配合默认 --width 1280 正好 16:9，避免黑边）")
     merge_p.add_argument("--width", type=int, default=1280, help="仅 sequential 布局使用：统一画面宽度（像素），默认 1280")
     add_gif_args(merge_p)

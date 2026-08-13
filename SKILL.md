@@ -1,6 +1,6 @@
 ---
 name: video-generate
-description: 统一的 AI 视频生成技能，通过 API 直接调用 Seedance 2.0 Fast（火山引擎 Ark）或 MiniMax H3（MiniMax 按量购买 API），支持文生视频、多模态参考生视频（图片/视频/音频驱动），默认引擎为 Seedance，可用 --engine 切换到 H3；还支持用同一份提示词生成两段视频并自动拼成带引擎字幕的左右分屏对比视频（或直接拼接两段已有视频）。当用户要求"生成一段视频""跑一个视频测试""用 Seedance/H3 生成视频""做一个两个引擎的对比视频""拼一个左右分屏对比"时使用。
+description: 统一的 AI 视频生成技能，通过 API 直接调用 Seedance 2.0 Fast（火山引擎 Ark）或 MiniMax H3（MiniMax 按量购买 API），支持文生视频、多模态参考生视频（图片/视频/音频驱动），默认引擎为 Seedance，可用 --engine 切换到 H3；还支持用同一份提示词生成两段视频并自动拼成带引擎字幕的对比视频（横版自动上下堆叠、竖版自动左右分屏，也可强制指定，或用 sequential 先后播放并保留音轨），或直接拼接两段已有视频。当用户要求"生成一段视频""跑一个视频测试""用 Seedance/H3 生成视频""做一个两个引擎的对比视频""拼一个左右分屏/上下对比"时使用。
 ---
 
 # video-generate：统一视频生成技能
@@ -72,7 +72,9 @@ python3 skills/video-generate/video_generate.py generate \
 
 ## 生成对比视频（两个引擎同台对比）
 
-`compare` 子命令：同一份提示词分别提交给左右两个引擎，等两边都生成完，自动拼成左右分屏视频，各自左上角烧字幕标注引擎名（默认左 Seedance、右 H3），效果和 `output/seedance-vs-h3/评测文章.md` 里的对比图/动图一致。
+`compare` 子命令：同一份提示词分别提交给左右两个引擎，等两边都生成完，自动拼成对比视频，各自左上角烧字幕标注引擎名（默认左 Seedance、右 H3），效果和 `output/seedance-vs-h3/评测文章.md` 里的对比图/动图一致。
+
+拼接布局默认是 `auto`：**按视频实际宽高自动判断**——宽视频（16:9 等横版，含正方形）自动**上下堆叠**，竖视频（9:16 等）自动**左右分屏**，这样拼出来的画面不会变成一个极端的长条形。也可以用 `--layout` 强制指定 `side-by-side`（左右分屏）或 `top-bottom`（上下堆叠）。
 
 ```bash
 python3 skills/video-generate/video_generate.py compare \
@@ -86,7 +88,7 @@ python3 skills/video-generate/video_generate.py compare \
 
 可以用 `--left-engine`/`--right-engine` 互换或指定同引擎对比不同 prompt 场景，`--left-label`/`--right-label` 自定义字幕文字，`--no-keep-source` 合成完删掉两段原始素材省磁盘。
 
-**左右分屏默认是静音的**（两段视频同时播放，两条音轨叠在一起没法听），如果想保留音频，加 `--layout sequential`：先完整播放第一段（带字幕），再完整播放第二段，音轨原样保留；哪一段没有音轨会自动补一段等长静音，避免 ffmpeg 因为音视频流不匹配而报错。
+**`side-by-side`/`top-bottom`（也就是 `auto` 自动选出来的这两种）都是静音的**（两段视频同时播放，两条音轨叠在一起没法听），如果想保留音频，显式传 `--layout sequential`：先完整播放第一段（带字幕），再完整播放第二段，音轨原样保留；哪一段没有音轨会自动补一段等长静音，避免 ffmpeg 因为音视频流不匹配而报错。
 
 ```bash
 python3 skills/video-generate/video_generate.py compare \
@@ -95,7 +97,7 @@ python3 skills/video-generate/video_generate.py compare \
   --out output/compare/篮球对比-先后播放.mp4
 ```
 
-`--width`/`--height` 仅在 `sequential` 布局下用于把两段视频统一缩放到同一分辨率（默认 1280×720，避免不同源分辨率导致黑边），`side-by-side` 布局下 `--height` 仍表示单侧高度、`--width` 不生效。
+`--height` 在 `side-by-side` 下是单侧高度、在 `top-bottom` 下不生效；`--width` 在 `top-bottom` 下是单侧宽度、在 `side-by-side` 下不生效；`sequential` 下 `--width`/`--height` 一起决定统一画布尺寸（默认 1280×720，避免不同源分辨率导致黑边）。
 
 **已经有两段视频，只想拼对比图，不想再花钱生成**：用 `merge` 子命令，纯本地 ffmpeg 操作，不调用任何 API：
 
@@ -137,4 +139,5 @@ python3 skills/video-generate/video_generate.py merge \
 - Seedance 的 `resolution` 字段未在官方文档中明确支持，脚本允许传入但不保证生效
 - H3 的 `reference_image/video/audio` 与 `first_frame/last_frame` 互斥，不能同时使用（脚本会在提交前拦截并报错）
 - `compare`/`merge` 依赖本机 `ffmpeg`（`sequential` 布局还依赖 `ffprobe`，随 ffmpeg 一起装），未安装会直接报错退出
-- `side-by-side` 布局固定静音（`-an`），只有 `sequential` 布局保留音轨
+- `side-by-side`/`top-bottom` 固定静音（`-an`），只有 `sequential` 布局保留音轨
+- `auto` 布局按视频宽高判断，正方形（宽=高）按上下堆叠处理；探测失败会回退为 `side-by-side` 并打印警告
