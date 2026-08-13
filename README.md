@@ -47,6 +47,17 @@ python3 video_generate.py generate \
 
 拿不准就两边各跑一版对比着看，别只信任一边的官方 demo。
 
+## Star 增长
+
+[![Star History Chart](https://api.star-history.com/svg?repos=koffuxu/video-generate-skill&type=Date)](https://star-history.com/#koffuxu/video-generate-skill&Date)
+
+## 作者
+
+| 平台 | 链接 |
+|---|---|
+| X（Twitter） | [@koffuxu](https://x.com/koffuxu) |
+| 微信公众号 | 可夫小子 |
+
 ## License
 
-MIT
+[MIT](LICENSE)
