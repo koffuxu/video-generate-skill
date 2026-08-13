@@ -13,6 +13,8 @@
 - 支持纯文本生成、多模态参考生视频（参考图片 / 视频 / 音频）、H3 的首尾帧图生视频
 - 本地文件自动转 base64 data URI，也支持直接传公网 URL
 - 异步模式（`--async`）只拿 `task_id` 不阻塞，配合 `task-get` 子命令手动查询/补下载
+- `compare` 子命令：同一份提示词同时喂给两个引擎，自动拼成带引擎字幕的左右分屏对比视频（可选顺带导出 GIF）
+- `merge` 子命令：两段已有视频直接拼对比图，纯本地 ffmpeg 操作，不产生任何 API 费用
 - 下载前自动创建目标目录
 
 ## 快速开始
@@ -34,7 +36,16 @@ python3 video_generate.py generate \
   --engine h3 --resolution 768P \
   --prompt "一个男孩在海边打篮球，夕阳，写实质感" \
   --duration 5 --ratio 16:9 --out output/test-h3.mp4
+
+# 同一份提示词两边各生成一版，自动拼成左右分屏对比视频 + GIF
+python3 video_generate.py compare \
+  --prompt "一个男孩在海边打篮球，夕阳，写实质感" \
+  --duration 10 --ratio 16:9 \
+  --out output/compare/篮球对比.mp4 \
+  --gif-out output/compare/篮球对比.gif --gif-duration 4
 ```
+
+需要 `ffmpeg`（`compare`/`merge` 依赖）：`brew install ffmpeg`
 
 完整参数说明、多模态参考用法、计费参考和已知限制见 [SKILL.md](./SKILL.md)。
 

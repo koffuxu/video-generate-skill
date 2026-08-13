@@ -1,6 +1,6 @@
 ---
 name: video-generate
-description: 统一的 AI 视频生成技能，通过 API 直接调用 Seedance 2.0 Fast（火山引擎 Ark）或 MiniMax H3（MiniMax 按量购买 API），支持文生视频、多模态参考生视频（图片/视频/音频驱动），默认引擎为 Seedance，可用 --engine 切换到 H3。当用户要求"生成一段视频""跑一个视频测试""用 Seedance/H3 生成视频"时使用。
+description: 统一的 AI 视频生成技能，通过 API 直接调用 Seedance 2.0 Fast（火山引擎 Ark）或 MiniMax H3（MiniMax 按量购买 API），支持文生视频、多模态参考生视频（图片/视频/音频驱动），默认引擎为 Seedance，可用 --engine 切换到 H3；还支持用同一份提示词生成两段视频并自动拼成带引擎字幕的左右分屏对比视频（或直接拼接两段已有视频）。当用户要求"生成一段视频""跑一个视频测试""用 Seedance/H3 生成视频""做一个两个引擎的对比视频""拼一个左右分屏对比"时使用。
 ---
 
 # video-generate：统一视频生成技能
@@ -70,6 +70,34 @@ python3 skills/video-generate/video_generate.py generate \
   --prompt "人物缓缓转身" --duration 5 --out output/i2v.mp4
 ```
 
+## 生成对比视频（两个引擎同台对比）
+
+`compare` 子命令：同一份提示词分别提交给左右两个引擎，等两边都生成完，自动拼成左右分屏视频，各自左上角烧字幕标注引擎名（默认左 Seedance、右 H3），效果和 `output/seedance-vs-h3/评测文章.md` 里的对比图/动图一致。
+
+```bash
+python3 skills/video-generate/video_generate.py compare \
+  --prompt "一个男孩在海边打篮球，夕阳，写实质感" \
+  --duration 10 --ratio 16:9 \
+  --out output/compare/篮球对比.mp4 \
+  --gif-out output/compare/篮球对比.gif --gif-duration 4
+```
+
+生成后会在 `--out` 同目录留下三份文件：`{名字}-left-seedance.mp4`、`{名字}-right-h3.mp4`（两段原始素材，默认保留，方便单独复查/发布）、以及拼好的对比视频本体；传了 `--gif-out` 还会额外截一段转 GIF（适合直接嵌公众号/小红书正文，微信图文接口对 GIF 大小敏感，建议 `--gif-duration` 控制在 3-5 秒）。
+
+可以用 `--left-engine`/`--right-engine` 互换或指定同引擎对比不同 prompt 场景，`--left-label`/`--right-label` 自定义字幕文字，`--no-keep-source` 合成完删掉两段原始素材省磁盘。
+
+**已经有两段视频，只想拼对比图，不想再花钱生成**：用 `merge` 子命令，纯本地 ffmpeg 操作，不调用任何 API：
+
+```bash
+python3 skills/video-generate/video_generate.py merge \
+  --left seedance-案例.mp4 --right h3-案例.mp4 \
+  --left-label "Seedance 2.0 Fast" --right-label "MiniMax H3" \
+  --out output/compare/对比.mp4 \
+  --gif-out output/compare/对比.gif --gif-duration 4
+```
+
+依赖 `ffmpeg`（`brew install ffmpeg`），`compare` 和 `merge` 都需要。
+
 ## 参数说明
 
 | 参数 | 说明 |
@@ -97,3 +125,4 @@ python3 skills/video-generate/video_generate.py generate \
 - H3 任务查询接口（`task-get`）只能查最近 7 天内的任务，超出会报无效 task_id
 - Seedance 的 `resolution` 字段未在官方文档中明确支持，脚本允许传入但不保证生效
 - H3 的 `reference_image/video/audio` 与 `first_frame/last_frame` 互斥，不能同时使用（脚本会在提交前拦截并报错）
+- `compare`/`merge` 依赖本机 `ffmpeg`，未安装会直接报错退出
