@@ -283,6 +283,80 @@ def build_compare_video(left_path, right_path, left_label, right_label, out_path
     return out_path
 
 
+def probe_duration(path):
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
+        capture_output=True, text=True,
+    )
+    text = (result.stdout or "").strip()
+    return float(text) if text else 0.0
+
+
+def has_audio_stream(path):
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", path],
+        capture_output=True, text=True,
+    )
+    return bool((result.stdout or "").strip())
+
+
+def build_sequential_video(left_path, right_path, left_label, right_label, out_path, width=1280, height=720):
+    """先完整播放左侧视频，再完整播放右侧视频（先后顺序拼接，非左右分屏），保留原始音轨。"""
+    require_ffmpeg()
+    out_dir = os.path.dirname(out_path)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+
+    left_has_audio = has_audio_stream(left_path)
+    right_has_audio = has_audio_stream(right_path)
+    use_audio = left_has_audio or right_has_audio
+
+    inputs = ["-i", left_path, "-i", right_path]
+    left_audio_src = "0:a"
+    right_audio_src = "1:a"
+    next_input_idx = 2
+
+    filters = [
+        f"[0:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,"
+        f"drawtext=text='{escape_drawtext(left_label)}':fontcolor=white:fontsize=32:"
+        f"box=1:boxcolor=black@0.55:boxborderw=12:x=24:y=24[v0]",
+        f"[1:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,"
+        f"drawtext=text='{escape_drawtext(right_label)}':fontcolor=white:fontsize=32:"
+        f"box=1:boxcolor=black@0.55:boxborderw=12:x=24:y=24[v1]",
+    ]
+
+    if use_audio:
+        if not left_has_audio:
+            inputs += ["-f", "lavfi", "-t", str(max(probe_duration(left_path), 0.1)),
+                       "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]
+            left_audio_src = f"{next_input_idx}:a"
+            next_input_idx += 1
+        if not right_has_audio:
+            inputs += ["-f", "lavfi", "-t", str(max(probe_duration(right_path), 0.1)),
+                       "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]
+            right_audio_src = f"{next_input_idx}:a"
+            next_input_idx += 1
+        filters.append(f"[v0][{left_audio_src}][v1][{right_audio_src}]concat=n=2:v=1:a=1[outv][outa]")
+        map_args = ["-map", "[outv]", "-map", "[outa]"]
+        audio_args = ["-c:a", "aac"]
+    else:
+        filters.append("[v0][v1]concat=n=2:v=1:a=0[outv]")
+        map_args = ["-map", "[outv]"]
+        audio_args = ["-an"]
+
+    cmd = (
+        ["ffmpeg", "-y"] + inputs + ["-filter_complex", ";".join(filters)] + map_args
+        + ["-c:v", "libx264", "-crf", "20", "-preset", "fast"] + audio_args + [out_path]
+    )
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"❌ ffmpeg 合成失败:\n{result.stderr[-2000:]}")
+        sys.exit(1)
+    return out_path
+
+
 def build_gif(video_path, out_path, start=0, duration=None, fps=10, width=760):
     """从对比视频截取一段转成 GIF 动图，适合直接嵌入公众号/小红书正文。"""
     require_ffmpeg()
@@ -302,6 +376,12 @@ def build_gif(video_path, out_path, start=0, duration=None, fps=10, width=760):
         print(f"❌ GIF 生成失败:\n{result.stderr[-2000:]}")
         sys.exit(1)
     return out_path
+
+
+def render_compare(layout, left_path, right_path, left_label, right_label, out_path, height, width):
+    if layout == "sequential":
+        return build_sequential_video(left_path, right_path, left_label, right_label, out_path, width=width, height=height)
+    return build_compare_video(left_path, right_path, left_label, right_label, out_path, height=height)
 
 
 def cmd_generate(args):
@@ -370,11 +450,12 @@ def cmd_compare(args):
         raw_paths[side] = raw_path
         print(f"   ✅ {side}（{info['engine']}）已下载: {raw_path}")
 
-    print("🎬 合成左右分屏对比视频...")
-    build_compare_video(
-        raw_paths["left"], raw_paths["right"],
+    layout_desc = "左右分屏" if args.layout == "side-by-side" else "先后播放（保留音轨）"
+    print(f"🎬 合成对比视频（{layout_desc}）...")
+    render_compare(
+        args.layout, raw_paths["left"], raw_paths["right"],
         sides["left"]["label"], sides["right"]["label"],
-        args.out, height=args.height,
+        args.out, height=args.height, width=args.width,
     )
     print(f"✅ 对比视频已生成: {args.out}")
 
@@ -395,12 +476,14 @@ def cmd_compare(args):
 
 
 def cmd_merge(args):
-    """把两段已有视频直接拼成左右分屏对比视频，不调用任何生成 API。"""
+    """把两段已有视频直接拼成对比视频，不调用任何生成 API。"""
     left_label = args.left_label or Path(args.left).stem
     right_label = args.right_label or Path(args.right).stem
 
-    print("🎬 合成左右分屏对比视频...")
-    build_compare_video(args.left, args.right, left_label, right_label, args.out, height=args.height)
+    layout_desc = "左右分屏" if args.layout == "side-by-side" else "先后播放（保留音轨）"
+    print(f"🎬 合成对比视频（{layout_desc}）...")
+    render_compare(args.layout, args.left, args.right, left_label, right_label,
+                    args.out, height=args.height, width=args.width)
     print(f"✅ 对比视频已生成: {args.out}")
 
     if args.gif_out:
@@ -455,17 +538,20 @@ def build_parser():
 
     cmp_p = sub.add_parser(
         "compare",
-        help="用同一份提示词分别调用两个引擎生成视频，拼成左右分屏对比视频（带引擎字幕）",
+        help="用同一份提示词分别调用两个引擎生成视频，拼成对比视频（带引擎字幕）",
     )
     add_generation_args(cmp_p)
-    cmp_p.add_argument("--left-engine", choices=["seedance", "h3"], default="seedance", help="左侧引擎，默认 seedance")
-    cmp_p.add_argument("--right-engine", choices=["seedance", "h3"], default="h3", help="右侧引擎，默认 h3")
-    cmp_p.add_argument("--left-label", default=None, help="左侧字幕文字，默认用引擎显示名")
-    cmp_p.add_argument("--right-label", default=None, help="右侧字幕文字，默认用引擎显示名")
+    cmp_p.add_argument("--left-engine", choices=["seedance", "h3"], default="seedance", help="左侧/第一段引擎，默认 seedance")
+    cmp_p.add_argument("--right-engine", choices=["seedance", "h3"], default="h3", help="右侧/第二段引擎，默认 h3")
+    cmp_p.add_argument("--left-label", default=None, help="左侧/第一段字幕文字，默认用引擎显示名")
+    cmp_p.add_argument("--right-label", default=None, help="右侧/第二段字幕文字，默认用引擎显示名")
     cmp_p.add_argument("--left-api-key", default=None, help="覆盖左侧引擎的默认凭据文件")
     cmp_p.add_argument("--right-api-key", default=None, help="覆盖右侧引擎的默认凭据文件")
     cmp_p.add_argument("--out", required=True, help="对比视频输出路径，如 output/compare.mp4")
-    cmp_p.add_argument("--height", type=int, default=640, help="拼接后单侧画面高度（像素），默认 640")
+    cmp_p.add_argument("--layout", choices=["side-by-side", "sequential"], default="side-by-side",
+                        help="side-by-side（默认）：左右分屏同时播放，静音；sequential：先完整播放第一段再播放第二段，保留原始音轨")
+    cmp_p.add_argument("--height", type=int, default=720, help="画面高度（像素）。side-by-side 是单侧高度，sequential 是整体高度，默认 720（配合默认 --width 1280 正好 16:9，避免黑边）")
+    cmp_p.add_argument("--width", type=int, default=1280, help="仅 sequential 布局使用：统一画面宽度（像素），默认 1280")
     cmp_p.add_argument("--no-keep-source", action="store_true", help="合成完成后删除两段原始素材，默认保留")
     cmp_p.add_argument("--poll-interval", type=int, default=15, help="轮询间隔秒数，默认 15")
     cmp_p.add_argument("--max-wait", type=int, default=900, help="最长等待秒数，默认 900（15 分钟）")
@@ -474,14 +560,17 @@ def build_parser():
 
     merge_p = sub.add_parser(
         "merge",
-        help="把两段已有视频直接拼成左右分屏对比视频（不调用任何生成 API，不产生费用）",
+        help="把两段已有视频直接拼成对比视频（不调用任何生成 API，不产生费用）",
     )
-    merge_p.add_argument("--left", required=True, help="左侧视频本地路径")
-    merge_p.add_argument("--right", required=True, help="右侧视频本地路径")
-    merge_p.add_argument("--left-label", default=None, help="左侧字幕文字，默认用文件名")
-    merge_p.add_argument("--right-label", default=None, help="右侧字幕文字，默认用文件名")
+    merge_p.add_argument("--left", required=True, help="左侧/第一段视频本地路径")
+    merge_p.add_argument("--right", required=True, help="右侧/第二段视频本地路径")
+    merge_p.add_argument("--left-label", default=None, help="左侧/第一段字幕文字，默认用文件名")
+    merge_p.add_argument("--right-label", default=None, help="右侧/第二段字幕文字，默认用文件名")
     merge_p.add_argument("--out", required=True, help="对比视频输出路径")
-    merge_p.add_argument("--height", type=int, default=640, help="拼接后单侧画面高度（像素），默认 640")
+    merge_p.add_argument("--layout", choices=["side-by-side", "sequential"], default="side-by-side",
+                          help="side-by-side（默认）：左右分屏同时播放，静音；sequential：先完整播放第一段再播放第二段，保留原始音轨")
+    merge_p.add_argument("--height", type=int, default=720, help="画面高度（像素）。side-by-side 是单侧高度，sequential 是整体高度，默认 720（配合默认 --width 1280 正好 16:9，避免黑边）")
+    merge_p.add_argument("--width", type=int, default=1280, help="仅 sequential 布局使用：统一画面宽度（像素），默认 1280")
     add_gif_args(merge_p)
     merge_p.set_defaults(func=cmd_merge)
 

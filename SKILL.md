@@ -86,6 +86,17 @@ python3 skills/video-generate/video_generate.py compare \
 
 可以用 `--left-engine`/`--right-engine` 互换或指定同引擎对比不同 prompt 场景，`--left-label`/`--right-label` 自定义字幕文字，`--no-keep-source` 合成完删掉两段原始素材省磁盘。
 
+**左右分屏默认是静音的**（两段视频同时播放，两条音轨叠在一起没法听），如果想保留音频，加 `--layout sequential`：先完整播放第一段（带字幕），再完整播放第二段，音轨原样保留；哪一段没有音轨会自动补一段等长静音，避免 ffmpeg 因为音视频流不匹配而报错。
+
+```bash
+python3 skills/video-generate/video_generate.py compare \
+  --prompt "一个男孩在海边打篮球，夕阳，写实质感" \
+  --duration 5 --ratio 16:9 --layout sequential \
+  --out output/compare/篮球对比-先后播放.mp4
+```
+
+`--width`/`--height` 仅在 `sequential` 布局下用于把两段视频统一缩放到同一分辨率（默认 1280×720，避免不同源分辨率导致黑边），`side-by-side` 布局下 `--height` 仍表示单侧高度、`--width` 不生效。
+
 **已经有两段视频，只想拼对比图，不想再花钱生成**：用 `merge` 子命令，纯本地 ffmpeg 操作，不调用任何 API：
 
 ```bash
@@ -125,4 +136,5 @@ python3 skills/video-generate/video_generate.py merge \
 - H3 任务查询接口（`task-get`）只能查最近 7 天内的任务，超出会报无效 task_id
 - Seedance 的 `resolution` 字段未在官方文档中明确支持，脚本允许传入但不保证生效
 - H3 的 `reference_image/video/audio` 与 `first_frame/last_frame` 互斥，不能同时使用（脚本会在提交前拦截并报错）
-- `compare`/`merge` 依赖本机 `ffmpeg`，未安装会直接报错退出
+- `compare`/`merge` 依赖本机 `ffmpeg`（`sequential` 布局还依赖 `ffprobe`，随 ffmpeg 一起装），未安装会直接报错退出
+- `side-by-side` 布局固定静音（`-an`），只有 `sequential` 布局保留音轨
