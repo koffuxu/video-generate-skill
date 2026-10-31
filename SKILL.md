@@ -1,6 +1,6 @@
 ---
 name: video-generate
-description: 统一的 AI 视频生成技能，通过 API 直接调用 Seedance 2.0 Fast（火山引擎 Ark）或 MiniMax H3（MiniMax 按量购买 API），支持文生视频、多模态参考生视频（图片/视频/音频驱动），默认引擎为 Seedance，可用 --engine 切换到 H3；还支持用同一份提示词生成两段视频并自动拼成带引擎字幕的对比视频（横版自动上下堆叠、竖版自动左右分屏，也可强制指定，或用 sequential 先后播放并保留音轨），或直接拼接两段已有视频。当用户要求"生成一段视频""跑一个视频测试""用 Seedance/H3 生成视频""做一个两个引擎的对比视频""拼一个左右分屏/上下对比"时使用。
+description: 统一的 AI 视频生成技能，通过 API 直接调用 Seedance 2.0 Fast（火山引擎 Ark）或 MiniMax H3（MiniMax 按量购买 API），支持文生视频、多模态参考生视频（图片/视频/音频驱动），默认引擎为 Seedance，可用 --engine 切换到 H3；还内置 15 种 MG 动态设计风格库（代码驱动、零 API 成本，适合 logo 片头/品牌/科普/花字等），还支持用同一份提示词生成两段视频并自动拼成带引擎字幕的对比视频（横版自动上下堆叠、竖版自动左右分屏，也可强制指定，或用 sequential 先后播放并保留音轨），或直接拼接两段已有视频。当用户要求"做 MG 动画/扁平/像素/玻璃拟态等风格短片"、"生成一段视频""跑一个视频测试""用 Seedance/H3 生成视频""做一个两个引擎的对比视频""拼一个左右分屏/上下对比"时使用。
 ---
 
 # video-generate：统一视频生成技能
@@ -110,6 +110,21 @@ python3 skills/video-generate/video_generate.py merge \
 ```
 
 依赖 `ffmpeg`（`brew install ffmpeg`），`compare` 和 `merge` 都需要。
+
+## MG 风格库：代码驱动的 10 秒动画（无需视频 API）
+
+收录自 [mg-styles-15](https://github.com/Vincentwei1021/mg-styles-15)（MIT）。思路：让 AI 写一个能画出任意时刻 `t` 的网页（`window.renderAt(t)`），无头 Chrome 逐帧截图 + ffmpeg 合成画面与配乐，输出逐帧确定的 MP4。15 种风格：逐帧手绘、等轴 2.5D、扁平矢量、线条、3D 渲染、形变、贴纸科普、赛博 HUD、拼贴、极光玻璃、包豪斯、合成波/VHS、像素、液态、综艺花字（竖屏）。
+
+**何时用**：要精确的文字/品牌/数据、特定设计风格、MG/片头/花字类短片，或不想花生视频费用。写实镜头、真人/场景仍用上面的 Seedance/H3。
+
+**怎么用**（详见 `references/mg-styles/README.md`，含 15 种风格速查表、适用场景与流程）：
+
+1. 先读 `references/mg-styles/README.md` 选风格，再读对应 `prompts/<编号-名>.md`。
+2. 工作目录放 `output/<任务名>/`；把提示词代码块整段交给 AI，改 `Creative seed`（故事/品牌/文案/配色）与 `Output`（竖屏发布改 1080×1920），保留 `Signature features`。
+3. 复用 `references/mg-styles/harness/render.mjs` 渲染（`node render.mjs <demo目录>`，`--stills` 先出关键帧；需 Node ≥ 22.12 + Chrome + ffmpeg，`npm install` 用同目录 `package.json`），配乐参考 `audio-README.md`（mgaudio 库本体未入库，需要时从原仓库取）。
+4. 成片用 `rubric.md` 另开 AI 评审，贴回再改一轮；新风格按 `template.md` 自定义。
+
+**注意**：提示词内 `../demos/` 链接指向原仓库；中文字体需自备，否则回退系统字体；同一提示词每次结果不同，需迭代；仅用可商用素材，品牌名用虚构。
 
 ## 参数说明
 
