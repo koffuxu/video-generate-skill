@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 output/
+node_modules/
+references/mg-styles/demos/
+references/mg-styles/_*.mjs
+references/mg-styles/probe_page_errors.mjs
