@@ -5,3 +5,5 @@ node_modules/
 references/mg-styles/demos/
 references/mg-styles/_*.mjs
 references/mg-styles/probe_page_errors.mjs
+# 调试探针（几何/样式定位用），临时产物，不入库
+references/mg-styles/probe_*.mjs
