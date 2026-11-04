@@ -82,7 +82,7 @@ def build_seedance_payload(args):
         })
 
     payload = {
-        "model": SEEDANCE_MODEL,
+        "model": args.model or SEEDANCE_MODEL,
         "content": content,
         "generate_audio": args.generate_audio,
         "ratio": args.ratio,
@@ -534,6 +534,7 @@ def cmd_merge(args):
 def add_generation_args(p):
     """generate / compare 共用的“描述要生成什么”参数（不含引擎选择、凭据、输出路径）。"""
     p.add_argument("--prompt", required=True, help="视频描述提示词")
+    p.add_argument("--model", default=None, help=f"覆盖 seedance 模型 ID，默认 {SEEDANCE_MODEL}，如 doubao-seedance-2-5-260628（h3 不受影响）")
     p.add_argument("--duration", type=int, default=5, help="时长（秒）。seedance/h3 均支持整数秒，常见范围 4-15")
     p.add_argument("--ratio", default="16:9", help="画幅比例，如 16:9 / 9:16 / 1:1（h3 图生视频场景会被忽略，按输入图自适应）")
     p.add_argument("--resolution", default=None, help="分辨率。h3: 2K(默认) / 768P；seedance: 未经官方文档确认，谨慎使用")

@@ -51,7 +51,7 @@ python3 skills/video-generate/video_generate.py task-get \
 
 ## 多模态参考生视频
 
-图片 / 视频 / 音频参数支持本地文件路径（自动转 base64 data URI）或公网 URL，可重复传入：
+图片 / 视频 / 音频参数支持本地文件路径（自动转 base64 data URI）或公网 URL，可重复传入。注意：Seedance 的 `--reference-video` 只接受公网 URL，传本地文件会报 `reference_video must be a web url`；H3 可以用本地文件。
 
 ```bash
 python3 skills/video-generate/video_generate.py generate \
@@ -156,3 +156,20 @@ python3 skills/video-generate/video_generate.py merge \
 - `compare`/`merge` 依赖本机 `ffmpeg`（`sequential` 布局还依赖 `ffprobe`，随 ffmpeg 一起装），未安装会直接报错退出
 - `side-by-side`/`top-bottom` 固定静音（`-an`），只有 `sequential` 布局保留音轨
 - `auto` 布局按视频宽高判断，正方形（宽=高）按上下堆叠处理；探测失败会回退为 `side-by-side` 并打印警告
+
+## 动作迁移（照着参考视频跳舞/表演）
+
+要严格跟随参考视频的动作和节奏时，用 `wan_animate.py`，不要用 Seedance/H3 的参考生视频。Key 放 `~/.private_key/dashscope_api_key`（百炼北京地域）。
+
+```bash
+python3 skills/video-generate/wan_animate.py \
+  --image 角色带场景全身图.png --video 动作视频.mp4 --mode wan-pro --out output/xxx.mp4
+```
+
+- 优先 Move（`wan2.2-animate-move`，0.4 元/秒）：背景和人物都来自图片。Mix（0.6 元/秒）在原视频上替换人物，原片衣服和水印可能残留。
+- 正式出片用 `wan-pro`（Move 0.6 元/秒，约 704×1252、25fps）；`wan-std` 只有 15fps，手指易糊，适合先跑 5 秒验证。
+- 角色图要高清（豆包 Seedream 出 1600×2848 即可，面积上限约 462 万像素），图片不超过 5MB、边长 200–4096。
+- 视频 2–30 秒、边长 200–2048，文件名不要含中文。19 秒 pro 约生成 9–10 分钟。
+- 输出不带原音，用 `ffmpeg -i 生成.mp4 -i 原音.m4a -map 0:v:0 -map 1:a:0 -c:v copy -shortest` 合回原音轨。
+- 成人舞者迁移到幼儿角色时腿会偏长，角色选大一点的孩子更自然。
+- Seedance 的 `reference_video` 必须是网址，不能用本地文件；写实的 AI 人物图可能被判为真人而拦截。
