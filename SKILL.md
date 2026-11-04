@@ -159,6 +159,8 @@ python3 skills/video-generate/video_generate.py merge \
 
 ## 动作迁移（照着参考视频跳舞/表演）
 
+萌娃跳同款的完整流程（切段、合音、字幕、封面、存草稿）见 `skills/baby-dance-remake/SKILL.md`。
+
 要严格跟随参考视频的动作和节奏时，用 `wan_animate.py`，不要用 Seedance/H3 的参考生视频。Key 放 `~/.private_key/dashscope_api_key`（百炼北京地域）。
 
 ```bash
